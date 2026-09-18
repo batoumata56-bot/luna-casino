@@ -150,18 +150,6 @@ drop policy if exists "Creer une table" on public.game_rooms;
 create policy "Creer une table"
   on public.game_rooms for insert with check (auth.uid() = host_id);
 
--- L'hôte pilote la partie ; les joueurs assis peuvent pousser leurs actions
-drop policy if exists "Maj de sa table" on public.game_rooms;
-create policy "Maj de sa table"
-  on public.game_rooms for update
-  using (
-    auth.uid() = host_id
-    or exists (
-      select 1 from public.room_players rp
-      where rp.room_id = game_rooms.id and rp.user_id = auth.uid()
-    )
-  );
-
 drop policy if exists "Fermer sa table" on public.game_rooms;
 create policy "Fermer sa table"
   on public.game_rooms for delete using (auth.uid() = host_id);
@@ -206,6 +194,18 @@ create policy "Quitter sa place"
     or exists (
       select 1 from public.game_rooms r
       where r.id = room_players.room_id and r.host_id = auth.uid()
+    )
+  );
+
+-- L'hôte pilote la partie ; les joueurs assis peuvent pousser leurs actions
+drop policy if exists "Maj de sa table" on public.game_rooms;
+create policy "Maj de sa table"
+  on public.game_rooms for update
+  using (
+    auth.uid() = host_id
+    or exists (
+      select 1 from public.room_players rp
+      where rp.room_id = game_rooms.id and rp.user_id = auth.uid()
     )
   );
 
