@@ -1,0 +1,7 @@
+const html = await fetch('https://luna-casino-one.vercel.app/').then((r) => r.text())
+const m = html.match(/assets\/index-[^"']+\.js/)
+console.log('js', m && m[0])
+if (!m) process.exit(1)
+const js = await fetch('https://luna-casino-one.vercel.app/' + m[0]).then((r) => r.text())
+console.log('has supabase url', js.includes('zthepzejqtejjgqdziix'))
+console.log('size', js.length)
