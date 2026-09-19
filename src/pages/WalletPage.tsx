@@ -1,7 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useCasino } from '../store/CasinoContext'
 import type { CryptoSymbol } from '../types'
-import { formatCrypto, formatMoney, wealthOf } from '../lib/format'
+import {
+  cryptoPnlSince,
+  formatCrypto,
+  formatMoney,
+  formatSignedMoney,
+  formatSince,
+  wealthOf,
+} from '../lib/format'
 import {
   TIMEFRAMES,
   pctChange,
@@ -73,6 +80,14 @@ export function WalletPage() {
   const series = sliceHistory(history[symbol] ?? [], tf)
   const change = pctChange(history[symbol] ?? [], tf)
   const positive = change >= 0
+  const pnl = cryptoPnlSince(user.wallet.crypto, rates, user.cryptoLastBuy)
+  const pnlUp = (pnl?.delta ?? 0) >= 0
+  const coinThen = user.cryptoLastBuy
+    ? user.wallet.crypto[symbol] * user.cryptoLastBuy.rates[symbol]
+    : 0
+  const coinNow = user.wallet.crypto[symbol] * rates[symbol]
+  const coinDelta = coinNow - coinThen
+  const coinPct = coinThen > 0 ? (coinDelta / coinThen) * 100 : 0
 
   return (
     <div className="page wallet-page">
@@ -90,7 +105,58 @@ export function WalletPage() {
           <span className="muted">Fortune</span>
           <strong>{formatMoney(wealth)} LC</strong>
         </div>
+        <div>
+          <span className="muted">Depuis le dernier achat</span>
+          {pnl ? (
+            <strong className={pnlUp ? 'up' : 'down'}>
+              {formatSignedMoney(pnl.delta)}
+              <em>
+                {' '}
+                {pnl.pct >= 0 ? '+' : ''}
+                {pnl.pct.toFixed(2)}%
+              </em>
+            </strong>
+          ) : (
+            <strong className="muted">—</strong>
+          )}
+        </div>
       </div>
+
+      <section className={`crypto-pnl ${pnl ? (pnlUp ? 'up' : 'down') : ''}`}>
+        <div>
+          <h2>Performance depuis le dernier dépôt</h2>
+          {pnl ? (
+            <p>
+              Dernier achat {pnl.symbol} · {formatMoney(pnl.spentLc)} LC · {formatSince(pnl.at)}
+            </p>
+          ) : (
+            <p>Achète de la crypto pour suivre tes plus-values et tes pertes.</p>
+          )}
+        </div>
+        {pnl ? (
+          <div className="crypto-pnl-stats">
+            <div>
+              <span>Valeur actuelle</span>
+              <strong>{formatMoney(pnl.now)} LC</strong>
+            </div>
+            <div>
+              <span>Valeur au dernier achat</span>
+              <strong>{formatMoney(pnl.then)} LC</strong>
+            </div>
+            <div>
+              <span>{pnl.delta >= 0 ? 'Gain' : 'Déficit'}</span>
+              <strong className={pnlUp ? 'up' : 'down'}>
+                {formatSignedMoney(pnl.delta)}
+                <em>
+                  {' '}
+                  {pnl.pct >= 0 ? '+' : ''}
+                  {pnl.pct.toFixed(2)}%
+                </em>
+              </strong>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <section className="social-block send-lc">
         <h2>Envoyer des LC</h2>
@@ -192,9 +258,16 @@ export function WalletPage() {
             {symbol}
           </span>
           <span>
-            ≈ <strong>{formatMoney(user.wallet.crypto[symbol] * rates[symbol])} LC</strong>
+            ≈ <strong>{formatMoney(coinNow)} LC</strong>
           </span>
         </div>
+        {user.cryptoLastBuy && user.wallet.crypto[symbol] > 0 ? (
+          <p className={`holdings-pnl ${coinDelta >= 0 ? 'up' : 'down'}`}>
+            {symbol} depuis le dernier achat · {formatSignedMoney(coinDelta)} (
+            {coinPct >= 0 ? '+' : ''}
+            {coinPct.toFixed(2)}%)
+          </p>
+        ) : null}
       </section>
 
       <div className="trade-panels">

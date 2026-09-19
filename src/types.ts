@@ -29,6 +29,14 @@ export interface Wallet {
   crypto: CryptoBalances
 }
 
+/** Snapshot des cours au dernier achat — sert au P&L « depuis le dernier dépôt ». */
+export interface CryptoLastBuy {
+  at: number
+  symbol: CryptoSymbol
+  spentLc: number
+  rates: CryptoRates
+}
+
 export interface Profile {
   id: string
   username: string
@@ -50,6 +58,8 @@ export interface Player {
   /** Stats séparées par jeu (même structure que le général). */
   gameStats: GameStatsMap
   createdAt: number
+  /** Dernière fois où le joueur a mis du cash en crypto. */
+  cryptoLastBuy?: CryptoLastBuy
 }
 
 export interface CryptoRates {

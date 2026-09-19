@@ -51,6 +51,8 @@ function rowToPlayer(row: Record<string, unknown>, selfId?: string | null): Play
     stats: (row.stats as Player['stats']) ?? base.stats,
     gameStats: (row.game_stats as Player['gameStats']) ?? base.gameStats,
     createdAt: row.created_at ? new Date(String(row.created_at)).getTime() : Date.now(),
+    cryptoLastBuy: (row.stats as Player['stats'] & { cryptoLastBuy?: Player['cryptoLastBuy'] })
+      ?.cryptoLastBuy,
   })
 }
 
@@ -175,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         owned: player.profile.owned ?? [...STARTER_OWNED],
         cash: player.wallet.cash,
         crypto: player.wallet.crypto,
-        stats: player.stats,
+        stats: { ...player.stats, cryptoLastBuy: player.cryptoLastBuy ?? null },
         game_stats: player.gameStats,
         updated_at: now,
       }

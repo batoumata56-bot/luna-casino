@@ -242,3 +242,72 @@ export function emptyEquip() {
 }
 
 export type EquipSlots = { banner: string; icon: string; title: string; card: string }
+
+export const KIND_LABEL: Record<CosmeticKind, string> = {
+  banner: 'Bannière',
+  icon: 'Icône',
+  title: 'Titre',
+  card: 'Dos de cartes',
+}
+
+export type CrateDropResult = {
+  item: Cosmetic
+  duplicate: boolean
+  count: number
+}
+
+/** Revente ~32–40 % du coffre de référence de la rareté. */
+export const SELL_PRICE: Record<Rarity, number> = {
+  common: 800,
+  uncommon: 1_600,
+  rare: 3_500,
+  epic: 9_000,
+  legendary: 20_000,
+}
+
+export function sellPrice(rarity: Rarity): number {
+  return SELL_PRICE[rarity]
+}
+
+export function countOwned(owned: string[] | undefined, id: string): number {
+  if (!owned?.length) return 0
+  let n = 0
+  for (const x of owned) if (x === id) n += 1
+  return n
+}
+
+export function removeOneOwned(owned: string[], id: string): string[] {
+  const i = owned.lastIndexOf(id)
+  if (i < 0) return owned
+  return [...owned.slice(0, i), ...owned.slice(i + 1)]
+}
+
+type EquipProfile = { banner: string; avatar: string; title: string; cardback: string }
+
+export function isCosmeticEquipped(profile: EquipProfile, item: Cosmetic): boolean {
+  if (item.kind === 'banner') return profile.banner === item.id
+  if (item.kind === 'icon') return profile.avatar === item.value
+  if (item.kind === 'title') return profile.title === item.value
+  return profile.cardback === item.id
+}
+
+export function applyStarterFallback<T extends EquipProfile>(profile: T, item: Cosmetic): T {
+  const next = { ...profile }
+  if (item.kind === 'banner' && next.banner === item.id) next.banner = 'velvet'
+  if (item.kind === 'icon' && next.avatar === item.value) {
+    next.avatar = iconUrl('fox', next.avatar)
+  }
+  if (item.kind === 'title' && next.title === item.value) next.title = ''
+  if (item.kind === 'card' && next.cardback === item.id) next.cardback = 'card-classic'
+  return next
+}
+
+/** Rendu visuel si on équipait l’objet, sans toucher au profil réel. */
+export function previewEquip(profile: EquipProfile, item: Cosmetic) {
+  return {
+    banner: item.kind === 'banner' ? item.value : bannerCss(profile.banner),
+    avatar: item.kind === 'icon' ? item.value : profile.avatar,
+    title: item.kind === 'title' ? item.value : profile.title,
+    cardClass: item.kind === 'card' ? item.value : (cosmeticOf(profile.cardback)?.value ?? 'card-classic'),
+  }
+}

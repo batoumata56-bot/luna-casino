@@ -1,4 +1,6 @@
 import type {
+  CryptoBalances,
+  CryptoLastBuy,
   CryptoRates,
   CryptoSymbol,
   GameId,
@@ -41,12 +43,55 @@ export function formatSettleLine(stake: number, payout: number): string {
   return `Misés ${formatMoney(stake)} LC · Retour ${formatMoney(payout)} LC · Net ${netStr}`
 }
 
-export function wealthOf(wallet: Wallet, rates: CryptoRates): number {
-  let total = wallet.cash
-  ;(Object.keys(wallet.crypto) as CryptoSymbol[]).forEach((sym) => {
-    total += wallet.crypto[sym] * rates[sym]
-  })
+const CRYPTO_SYMBOLS: CryptoSymbol[] = ['LUNA', 'BTC', 'ETH', 'SOL']
+
+export function cryptoValue(crypto: CryptoBalances, rates: CryptoRates): number {
+  let total = 0
+  for (const sym of CRYPTO_SYMBOLS) {
+    total += (crypto[sym] ?? 0) * (rates[sym] ?? 0)
+  }
   return total
+}
+
+export function wealthOf(wallet: Wallet, rates: CryptoRates): number {
+  return wallet.cash + cryptoValue(wallet.crypto, rates)
+}
+
+export function cryptoPnlSince(
+  crypto: CryptoBalances,
+  rates: CryptoRates,
+  mark: CryptoLastBuy | undefined,
+): {
+  now: number
+  then: number
+  delta: number
+  pct: number
+  at: number
+  symbol: CryptoSymbol
+  spentLc: number
+} | null {
+  if (!mark?.rates) return null
+  const now = cryptoValue(crypto, rates)
+  const then = cryptoValue(crypto, mark.rates)
+  const delta = now - then
+  const pct = then > 0 ? (delta / then) * 100 : 0
+  return { now, then, delta, pct, at: mark.at, symbol: mark.symbol, spentLc: mark.spentLc }
+}
+
+export function formatSignedMoney(n: number): string {
+  const prefix = n > 0 ? '+' : ''
+  return `${prefix}${formatMoney(n)} LC`
+}
+
+export function formatSince(at: number, now = Date.now()): string {
+  const ms = Math.max(0, now - at)
+  const min = Math.floor(ms / 60_000)
+  if (min < 1) return 'à l’instant'
+  if (min < 60) return `il y a ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 48) return `il y a ${h} h`
+  const d = Math.floor(h / 24)
+  return `il y a ${d} j`
 }
 
 export function dailyKey(d = new Date()): string {
@@ -105,6 +150,7 @@ export function ensurePeriods(player: Player): Player {
   for (const id of GAME_IDS) {
     gameStats[id] = ensureStatsTree(gameStats[id] ?? emptyPlayerStats())
   }
+  const stats = player.stats as PlayerStats & { cryptoLastBuy?: Player['cryptoLastBuy'] }
   return {
     ...player,
     profile: {
@@ -115,6 +161,7 @@ export function ensurePeriods(player: Player): Player {
     },
     stats: ensureStatsTree(player.stats),
     gameStats,
+    cryptoLastBuy: player.cryptoLastBuy ?? stats?.cryptoLastBuy,
   }
 }
 

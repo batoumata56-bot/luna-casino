@@ -1,13 +1,18 @@
 import { useMemo, useState } from 'react'
 import { useCasino } from '../store/CasinoContext'
+import { CrateOpening } from '../components/CrateOpening'
 import {
   COSMETICS,
   CRATES,
   RARITY_COLOR,
   RARITY_LABEL,
   cosmeticOf,
+  countOwned,
+  sellPrice,
   type Cosmetic,
   type CosmeticKind,
+  type Crate,
+  type CrateDropResult,
   type Rarity,
 } from '../lib/cosmetics'
 import { formatMoney } from '../lib/format'
@@ -28,7 +33,7 @@ function CratePreview({ item }: { item: Cosmetic }) {
     return <img className="inv-icon" src={item.value} alt="" />
   }
   if (item.kind === 'card') {
-    return <div className={`inv-card ${item.value}`} />
+    return <div className={`inv-card card-skin ${item.value}`} />
   }
   return (
     <span className="inv-title-chip" style={{ borderColor: RARITY_COLOR[item.rarity] }}>
@@ -37,15 +42,22 @@ function CratePreview({ item }: { item: Cosmetic }) {
   )
 }
 
+type Opening = CrateDropResult & { crate: Crate; stamp: number }
+
 export function InventoryPage() {
-  const { user, openCrate, equipCosmetic } = useCasino()
+  const { user, openCrate, equipCosmetic, sellCosmetic } = useCasino()
   const [tab, setTab] = useState<CosmeticKind | 'all'>('all')
-  const [drop, setDrop] = useState<Cosmetic | null>(null)
+  const [opening, setOpening] = useState<Opening | null>(null)
   const owned = user.profile.owned ?? []
 
   const list = useMemo(() => {
-    return COSMETICS.filter((c) => owned.includes(c.id)).filter((c) => tab === 'all' || c.kind === tab)
+    return COSMETICS.filter((c) => owned.includes(c.id))
+      .filter((c) => tab === 'all' || c.kind === tab)
+      .map((c) => ({ item: c, count: countOwned(owned, c.id) }))
   }, [owned, tab])
+
+  const uniqueCount = new Set(owned).size
+  const totalCount = owned.length
 
   const equipped = (c: Cosmetic) => {
     if (c.kind === 'banner') return user.profile.banner === c.id
@@ -54,16 +66,26 @@ export function InventoryPage() {
     return user.profile.cardback === c.id
   }
 
+  const tryOpen = (crate: Crate) => {
+    const got = openCrate(crate.id)
+    if (!got) return
+    setOpening({ ...got, crate, stamp: Date.now() })
+  }
+
   return (
     <div className="page inv-page">
       <header className="page-head">
         <h1>Inventaire</h1>
-        <p>Ouvre des caisses pour des bannières, icônes, titres et dos de cartes. Ça se voit sur le podium.</p>
+        <p>
+          Ouvre des caisses, empile les doublons, vends ce dont tu n’as plus besoin. L’aperçu montre
+          l’objet équipé sans l’appliquer.
+        </p>
       </header>
 
       <section className="crate-grid">
         {CRATES.map((crate) => (
           <article key={crate.id} className="crate-card" style={{ ['--crate' as string]: crate.accent }}>
+            <div className="crate-card-gem" aria-hidden />
             <h2>{crate.name}</h2>
             <p>{crate.tagline}</p>
             <ul className="crate-odds">
@@ -75,35 +97,12 @@ export function InventoryPage() {
                 ) : null,
               )}
             </ul>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => {
-                const got = openCrate(crate.id)
-                if (got) setDrop(got)
-              }}
-            >
+            <button type="button" className="btn primary" onClick={() => tryOpen(crate)}>
               Ouvrir · {formatMoney(crate.price)} LC
             </button>
           </article>
         ))}
       </section>
-
-      {drop && (
-        <div className="crate-drop" role="status">
-          <CratePreview item={drop} />
-          <div>
-            <em style={{ color: RARITY_COLOR[drop.rarity] }}>{RARITY_LABEL[drop.rarity]}</em>
-            <strong>{drop.name}</strong>
-          </div>
-          <button type="button" className="btn" onClick={() => equipCosmetic(drop.id)}>
-            Équiper
-          </button>
-          <button type="button" className="chip" onClick={() => setDrop(null)}>
-            Ranger
-          </button>
-        </div>
-      )}
 
       <div className="filter-group">
         {KINDS.map((k) => (
@@ -119,25 +118,45 @@ export function InventoryPage() {
       </div>
 
       <div className="inv-grid">
-        {list.map((c) => (
-          <button
+        {list.map(({ item: c, count }) => (
+          <article
             key={c.id}
-            type="button"
             className={`inv-item rarity-${c.rarity} ${equipped(c) ? 'on' : ''}`}
-            onClick={() => equipCosmetic(c.id)}
           >
-            <CratePreview item={c} />
-            <span>{c.name}</span>
-            <em style={{ color: RARITY_COLOR[c.rarity] }}>{RARITY_LABEL[c.rarity]}</em>
-          </button>
+            {count > 1 && <span className="inv-stack">×{count}</span>}
+            <button type="button" className="inv-item-main" onClick={() => equipCosmetic(c.id)}>
+              <CratePreview item={c} />
+              <span>{c.name}</span>
+              <em style={{ color: RARITY_COLOR[c.rarity] }}>{RARITY_LABEL[c.rarity]}</em>
+            </button>
+            <button type="button" className="inv-sell" onClick={() => sellCosmetic(c.id)}>
+              Vendre · {formatMoney(sellPrice(c.rarity))} LC
+            </button>
+          </article>
         ))}
         {list.length === 0 && <p className="muted">Rien dans cette catégorie — ouvre une caisse.</p>}
       </div>
 
       <p className="hint">
-        {owned.length} objet(s) · titre actuel : {user.profile.title || 'aucun'} ·{' '}
+        {uniqueCount} style(s) · {totalCount} exemplaire(s) · titre : {user.profile.title || 'aucun'} ·{' '}
         {cosmeticOf(user.profile.cardback)?.name ?? 'cartes classiques'}
       </p>
+
+      {opening && (
+        <CrateOpening
+          key={opening.stamp}
+          crate={opening.crate}
+          item={opening.item}
+          duplicate={opening.duplicate}
+          count={opening.count}
+          user={user}
+          onEquip={() => {
+            equipCosmetic(opening.item.id)
+            setOpening(null)
+          }}
+          onClose={() => setOpening(null)}
+        />
+      )}
     </div>
   )
 }

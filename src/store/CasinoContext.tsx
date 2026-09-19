@@ -13,7 +13,18 @@ import { clamp, ensurePeriods, periodStats, wealthOf } from '../lib/format'
 import { appendPrices, seedHistory, type PriceHistory } from '../lib/prices'
 import { useAuth } from './AuthContext'
 import { supabase } from '../lib/supabase'
-import { CRATES, cosmeticOf, iconUrl, openCrateDrop, type Cosmetic } from '../lib/cosmetics'
+import {
+  CRATES,
+  applyStarterFallback,
+  cosmeticOf,
+  countOwned,
+  iconUrl,
+  isCosmeticEquipped,
+  openCrateDrop,
+  removeOneOwned,
+  sellPrice,
+  type CrateDropResult,
+} from '../lib/cosmetics'
 import type {
   CryptoRates,
   CryptoSymbol,
@@ -56,8 +67,9 @@ interface CasinoContextValue {
   lastBonusAt: number
   bonusAvailableIn: number
   bonusEligible: boolean
-  openCrate: (crateId: string) => Cosmetic | null
+  openCrate: (crateId: string) => CrateDropResult | null
   equipCosmetic: (id: string) => boolean
+  sellCosmetic: (id: string) => boolean
   sendMoney: (username: string, amount: number) => Promise<string | null>
   settleBet: (stake: number, payout: number, gameId?: GameId) => boolean
   /** Transfert direct portefeuille ↔ jetons de table (hors statistiques de mise). */
@@ -339,9 +351,16 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
               [symbol]: u.wallet.crypto[symbol] + coins,
             },
           },
+          cryptoLastBuy: {
+            at: Date.now(),
+            symbol,
+            spentLc: amount,
+            rates: { ...rates },
+          },
         }
       })
       if (ok) setToast(`Achat ${symbol} effectué`)
+      else setToast('Pas assez de LC pour cet achat')
       return ok
     },
     [rates],
@@ -398,30 +417,27 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
   }, [lastBonusAt, user.wallet, rates])
 
   const openCrate = useCallback(
-    (crateId: string): Cosmetic | null => {
+    (crateId: string): CrateDropResult | null => {
       const crate = CRATES.find((c) => c.id === crateId)
       if (!crate) return null
       if (user.wallet.cash < crate.price) {
         setToast('Pas assez de LC pour cette caisse')
         return null
       }
-      const drop = openCrateDrop(crate, user.profile.owned ?? [])
-      const duplicate = (user.profile.owned ?? []).includes(drop.id)
-      const refund = duplicate ? Math.floor(crate.price * 0.12) : 0
+      const owned = user.profile.owned ?? []
+      const drop = openCrateDrop(crate, owned)
+      const duplicate = owned.includes(drop.id)
+      const count = countOwned(owned, drop.id) + 1
       setUser((u) => ({
         ...u,
-        wallet: { ...u.wallet, cash: u.wallet.cash - crate.price + refund },
+        wallet: { ...u.wallet, cash: u.wallet.cash - crate.price },
         profile: {
           ...u.profile,
-          owned: duplicate ? u.profile.owned : [...(u.profile.owned ?? []), drop.id],
+          owned: [...(u.profile.owned ?? []), drop.id],
         },
       }))
-      if (duplicate) {
-        setToast(`Doublon ${drop.name} — +${refund} LC`)
-      } else {
-        setToast(`${drop.name} (${drop.rarity})`)
-      }
-      return drop
+      setToast(duplicate ? `${drop.name} · pile ×${count}` : `${drop.name} (${drop.rarity})`)
+      return { item: drop, duplicate, count }
     },
     [user.wallet.cash, user.profile.owned],
   )
@@ -445,6 +461,33 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
     setToast(`${item.name} équipé`)
     return true
   }, [])
+
+  const sellCosmetic = useCallback(
+    (id: string) => {
+      const item = cosmeticOf(id)
+      if (!item) return false
+      const owned = user.profile.owned ?? []
+      if (!owned.includes(id)) return false
+      const price = sellPrice(item.rarity)
+      setUser((u) => {
+        const have = u.profile.owned ?? []
+        if (!have.includes(id)) return u
+        const nextOwned = removeOneOwned(have, id)
+        let profile = { ...u.profile, owned: nextOwned }
+        if (!nextOwned.includes(id) && isCosmeticEquipped(profile, item)) {
+          profile = applyStarterFallback(profile, item)
+        }
+        return {
+          ...u,
+          wallet: { ...u.wallet, cash: u.wallet.cash + price },
+          profile,
+        }
+      })
+      setToast(`+${price} LC · ${item.name} vendu`)
+      return true
+    },
+    [user.profile.owned],
+  )
 
   const sendMoney = useCallback(
     async (rawName: string, amount: number) => {
@@ -530,6 +573,7 @@ export function CasinoProvider({ children }: { children: ReactNode }) {
     bonusEligible,
     openCrate,
     equipCosmetic,
+    sellCosmetic,
     sendMoney,
     settleBet,
     adjustCash,
